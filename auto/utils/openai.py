@@ -19,7 +19,7 @@ def encode_image(img_path):
 
 
 # 需要传给大模型的图片
-image_path = "down4.png"
+image_path = "./assets/down.png"
 
 # 将图片转为Base64编码
 base64_image = encode_image(image_path)

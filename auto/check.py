@@ -6,12 +6,14 @@ import re
 import time
 from email.header import decode_header
 import smtplib
+from email.utils import make_msgid
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import format_datetime
+from email.header import Header
 
 
-class MailControl:
+class MailCheck:
     def __init__(self):
         print("initializing mail control")
         self.config = None
@@ -36,8 +38,8 @@ class MailControl:
             self.config = config
         print("mail initialized")
 
-    def send_email(self, email_id, message_id, to_email, subject, new_body, in_reply_to, is_text, new_references):
-        print("sending mail to", to_email)
+    def send_email(self, email_id, to_email_str, subject, new_body, in_reply_to, is_text, new_references):
+        print("sending mail to", to_email_str)
         # 创建邮件对象
         msg = MIMEText(new_body, "plain", "utf-8") if is_text else MIMEMultipart()
         # msg['From'] = f"{SENDER_NAME} <{SENDER_EMAIL}>"
@@ -46,22 +48,51 @@ class MailControl:
             msg["From"] = f"""{self.config.get("EMAIL_NAME")} <{self.config.get("EMAIL_ACCOUNT")}>"""
         else:
             msg["From"] = self.config.get("EMAIL_ACCOUNT")
-        msg["To"] = to_email
+        # msg["To"] = to_email
+        to_name, to_email = self.split_name_mail(to_email_str)
+        print(f"Name: {to_name}")
+        print(f"Email: {to_email}")
+        receiver = f"{Header(to_name, 'utf-8').encode()} <{to_email}>" if to_name else to_email_str
+        msg["To"] = receiver
         # 发件人名字
         msg["Subject"] = subject
         msg["Date"] = format_datetime(datetime.datetime.utcnow())
         msg["In-Reply-To"] = in_reply_to  # 关联原邮件
+        # 9B4833CE-DF1B-495F-BB27-8C64B8508D0A@beidoufeng.com
+        msg_id = make_msgid("", self.config.get("EMAIL_ACCOUNT").split("@")[1])
+        # 去掉最后的点
+        new_msg_id = re.sub(r'\.(?=[^@]*@)', '', msg_id)
+        msg["Message-ID"] = new_msg_id
         msg["References"] = new_references  # 维护邮件线程
         # 添加邮件正文
         if not is_text:
             msg.attach(MIMEText(new_body, "plain" if is_text else "html", "utf-8"))
         # 连接 SMTP 服务器并发送邮件
-        self.server.sendmail(self.config.get("EMAIL_ACCOUNT"), to_email, msg.as_string())
+        self.server.sendmail(self.config.get("EMAIL_ACCOUNT"), to_email_str, msg.as_string())
         # server.quit()
         # self.config.get("REPLAY_IDS", []).append(message_id)
         # 将邮件追加到已发送邮件
         self.mail.append('Sent', "\\Seen", None, msg.as_bytes())
         print(f"{email_id} 邮件回复成功！")
+
+    def get_code(self, img):
+        print("用豆包api识别图片中的文字")
+
+    def reply_code(self, code):
+        print("回复识别到的文字内容")
+
+    def click_reply(self, link):
+        print("点击回复邮件链接")
+
+    def check_reply(self, html_body):
+        print("检查并处理回复邮件", html_body)
+        # 判断邮件类型
+        if "Deliver" in html_body:
+            print("处理Deliver邮件")
+
+        # 识别图片邮件
+
+        # 点击链接图片
 
     def rewrite_email(self, delivery_time, from_email, text_body, html_body: str):
         # print(f"Rewriting email body: {text_body}")
@@ -108,7 +139,7 @@ class MailControl:
         print(f"Rewritten email body: {new_html}")
         return new_html
 
-    def decode_header(self, header):
+    def decode_header(self, header) -> str:
         """解析邮件头"""
         decoded_parts = decode_header(header)
         decoded_header = ""
@@ -119,14 +150,20 @@ class MailControl:
                 decoded_header += part
         return decoded_header
 
+    def split_name_mail(self, name_mail: str):
+        if "<" in name_mail:
+            name_str, mail_str = name_mail.split("<")
+            return name_str.strip(), mail_str.replace(">", "").strip()
+        else:
+            return None, name_mail
+
     def sync_email(self):
         print(f"Syncing emails")
         # 选择收件箱（可选择其他文件夹，如 'Sent'）
-        # mail.select("inbox")
-        self.mail.select("Sent")
-        # 搜索所有未读邮件
-        # status, messages = mail.search(None, "UNSEEN")  # "ALL" 获取所有邮件, "UNSEEN" 获取未读邮件
-        status, messages = self.mail.search(None, "FLAGGED")  # "ALL" 获取所有邮件, "UNSEEN" 获取未读邮件
+        self.mail.select("INBOX")
+        # self.mail.select("Sent")
+        # 检索收件箱所有邮件
+        status, messages = self.mail.search(None, "ALL")
         email_ids = messages[0].split()
         print(f"发现 {len(email_ids)} 封标记邮件")
         for email_id in email_ids:
@@ -136,26 +173,28 @@ class MailControl:
             for response_part in msg_data:
                 if isinstance(response_part, tuple):
                     msg = email.message_from_bytes(response_part[1])  # 解析邮件
-                    message_id = msg.get("Message-ID")
+                    # message_id = msg.get("Message-ID")
                     # if message_id in self.config.get("REPLAY_IDS", []):
                     #     continue
                     subject, encoding = decode_header(msg["Subject"])[0]
                     if isinstance(subject, bytes):
                         subject = subject.decode(encoding if encoding else "utf-8")
                     # 解析From
-                    to_email = self.decode_header(msg['To'])
+                    to_email_str = self.decode_header(msg['To'])
                     # to_email = "15670339118@163.com"
                     from_email = self.decode_header(msg['From'])
                     in_reply_to = msg.get("In-Reply-To")
-                    original_message_id = msg["Message-ID"]
-                    original_references = msg.get("References", "")
+                    original_message_id = msg.get("Message-ID", "").strip()
+                    original_references = msg.get("References", "").replace("\r", "")
+                    references_format = " ".join([ref.strip() for ref in original_references.split("\n")])
                     # 组装新的 References 字段
-                    new_references = f"{original_references}\r\n{original_message_id}".strip()
+                    new_references = f"{references_format} {original_message_id}".strip()
                     delivery_time = msg['Date'].replace(" +0800", "") if msg[
                         'Date'] else datetime.datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S').replace("-0000", "")
                     print(f"邮件主题: {subject}")
+                    print(f"MessageId: {original_message_id}")
                     print(f"发件人: {from_email}")
-                    print("收件人:", to_email)
+                    print("收件人:", to_email_str)
                     # 收件时间
                     print(f"收件时间: {delivery_time}")
                     # 解析邮件正文
@@ -185,11 +224,8 @@ class MailControl:
                         text_body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
                         html_body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
                         # print(f"邮件正文: {html_body}")
-                    # 回复邮件
-                    new_body = self.rewrite_email(delivery_time, from_email, text_body, html_body)
-                    is_text = False if html_body and "<html" in html_body else True
-                    self.send_email(email_id, message_id, to_email, subject, new_body, in_reply_to, is_text,
-                                    new_references)
+                    # 检查邮件
+                    self.check_reply(html_body)
                     print(f"等待延时：{self.config.get('SLEEP_TIME', 60)} 秒...")
                     time.sleep(self.config.get("SLEEP_TIME", 60))
         # 退出
@@ -199,7 +235,7 @@ class MailControl:
             json.dump(self.config, f)
 
     def run(self):
-        print("running mail control")
+        print("running mail check")
         try:
             self.sync_email()
             self.mail.logout()
@@ -211,5 +247,5 @@ class MailControl:
 
 
 if __name__ == '__main__':
-    mail = MailControl()
+    mail = MailCheck()
     mail.run()
