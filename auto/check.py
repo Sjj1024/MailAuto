@@ -12,6 +12,8 @@ from email.mime.multipart import MIMEMultipart
 from email.utils import format_datetime
 from email.header import Header
 
+from bs4 import BeautifulSoup
+
 
 class MailCheck:
     def __init__(self):
@@ -19,6 +21,8 @@ class MailCheck:
         self.config = None
         self.mail = None
         self.server = None
+        self.link_count = 0
+        self.code_count = 0
         self.init_mail()
 
     def init_mail(self):
@@ -84,15 +88,44 @@ class MailCheck:
     def click_reply(self, link):
         print("点击回复邮件链接")
 
+    def get_click_link(self, html):
+        # 定义正则表达式模式，用于匹配以 http 开头的链接地址
+        pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+        # 使用 re.search() 函数在文本中查找第一个匹配的链接地址
+        match = re.search(pattern, html)
+        # 如果找到匹配的链接地址，则返回该地址；否则返回 None
+        if match:
+            link = match.group(0)
+            print("get_click_link:", link)
+            return link
+        return None
+
+    def get_deliver_link(self, html):
+        # 使用BeautifulSoup解析HTML
+        soup = BeautifulSoup(html, 'html.parser')
+        # 查找包含“Deliver my email”文本的<a>标签
+        a_tag = soup.find('a', string=lambda x: x and 'Deliver my email' in x.strip())
+        # 提取链接地址
+        if a_tag:
+            link = a_tag.get('href')
+            print("提取的链接地址get_deliver_link:", link)
+            return link
+        else:
+            print("未找到包含'Deliver my email'的<a>标签")
+            return ""
+
     def check_reply(self, html_body):
-        print("检查并处理回复邮件", html_body)
+        # print("检查并处理回复邮件", html_body)
         # 判断邮件类型
         if "Deliver" in html_body:
-            print("处理Deliver邮件")
-
-        # 识别图片邮件
-
-        # 点击链接图片
+            self.code_count += 1
+            print("处理Deliver邮件", self.code_count)
+            # 提取链接
+            link = self.get_deliver_link(html_body)
+        else:
+            self.link_count += 1
+            print("处理链接", self.link_count)
+            link = self.get_click_link(html_body)
 
     def rewrite_email(self, delivery_time, from_email, text_body, html_body: str):
         # print(f"Rewriting email body: {text_body}")
@@ -166,9 +199,9 @@ class MailCheck:
         status, messages = self.mail.search(None, "ALL")
         email_ids = messages[0].split()
         print(f"发现 {len(email_ids)} 封标记邮件")
-        for email_id in email_ids:
+        for (key, email_id) in enumerate(email_ids):
             # 获取邮件数据
-            print(f"正在处理邮件 {email_id}...")
+            print(f"正在处理邮件 {key} : {email_id}...")
             status, msg_data = self.mail.fetch(email_id, "(RFC822)")
             for response_part in msg_data:
                 if isinstance(response_part, tuple):
@@ -191,12 +224,12 @@ class MailCheck:
                     new_references = f"{references_format} {original_message_id}".strip()
                     delivery_time = msg['Date'].replace(" +0800", "") if msg[
                         'Date'] else datetime.datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S').replace("-0000", "")
-                    print(f"邮件主题: {subject}")
-                    print(f"MessageId: {original_message_id}")
-                    print(f"发件人: {from_email}")
-                    print("收件人:", to_email_str)
-                    # 收件时间
-                    print(f"收件时间: {delivery_time}")
+                    # print(f"邮件主题: {subject}")
+                    # print(f"MessageId: {original_message_id}")
+                    # print(f"发件人: {from_email}")
+                    # print("收件人:", to_email_str)
+                    # # 收件时间
+                    # print(f"收件时间: {delivery_time}")
                     # 解析邮件正文
                     text_body = None
                     html_body = None
