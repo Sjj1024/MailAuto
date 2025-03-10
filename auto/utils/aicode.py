@@ -1,6 +1,4 @@
 import base64
-import os
-
 from openai import OpenAI
 
 # 请确保您已将 API Key 存储在环境变量 ARK_API_KEY 中
@@ -9,7 +7,7 @@ client = OpenAI(
     # 此为默认路径，您可根据业务所在地域进行配置
     base_url="https://ark.cn-beijing.volces.com/api/v3",
     # 从环境变量中获取您的 API Key。此为默认方式，您可根据需要进行修改
-    api_key=os.getenv('DouKey'),
+    api_key="7f5744e3-acfc-43de-a35c-3bd3cf92f5e4",
 )
 
 
@@ -20,7 +18,7 @@ def encode_image(img_path):
 
 
 # 需要传给大模型的图片
-image_path = "./assets/down.png"
+image_path = "../assets/down.png"
 
 # 将图片转为Base64编码
 base64_image = encode_image(image_path)

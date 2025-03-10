@@ -11,7 +11,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import format_datetime
 from email.header import Header
-
+from openai import OpenAI
+from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
 
@@ -23,6 +24,7 @@ class MailCheck:
         self.server = None
         self.link_count = 0
         self.code_count = 0
+        self.aiclient = None
         self.init_mail()
 
     def init_mail(self):
@@ -41,6 +43,12 @@ class MailCheck:
             self.server.login(config.get("EMAIL_ACCOUNT"), config.get("EMAIL_PASSWORD"))
             self.config = config
         print("mail initialized")
+        self.aiclient = OpenAI(
+            # 此为默认路径，您可根据业务所在地域进行配置
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            # 从环境变量中获取您的 API Key。此为默认方式，您可根据需要进行修改
+            api_key=config.get("AI_TOKEN", None),
+        )
 
     def send_email(self, email_id, to_email_str, subject, new_body, in_reply_to, is_text, new_references):
         print("sending mail to", to_email_str)
@@ -81,6 +89,43 @@ class MailCheck:
 
     def get_code(self, img):
         print("用豆包api识别图片中的文字")
+        response = self.aiclient.chat.completions.create(
+            # 指定您创建的方舟推理接入点 ID，此处已帮您修改为您的推理接入点 ID
+            model="doubao-1-5-vision-pro-32k-250115",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "请返回这个图片中彩色的单词给我，不要返回其他的内容"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": img
+                            },
+                        },
+                    ],
+                }
+            ],
+        )
+        print(response.choices[0])
+        print("content: ", response.choices[0].message.content)
+
+    def get_code_img(self, link):
+        print("用豆包api识别图片中的文字")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(link, wait_until="networkidle")  # 等待页面加载完成
+            text = page.content()  # 获取整个 HTML
+            print("code html:", text)
+            browser.close()
+            pattern = r'<img[^>]*src="(data:image/[^;]+;base64,[^"]+)"[^>]*>'
+            # 使用 re.search() 函数在文本中查找第一个匹配的链接地址
+            match = re.search(pattern, text)
+            if match:
+                img = match.group(1)
+                print("img:", img)
+                self.get_code(img)
 
     def reply_code(self, code):
         print("回复识别到的文字内容")
@@ -122,6 +167,8 @@ class MailCheck:
             print("处理Deliver邮件", self.code_count)
             # 提取链接
             link = self.get_deliver_link(html_body)
+            # 获取验证码
+            self.get_code_img(link)
         else:
             self.link_count += 1
             print("处理链接", self.link_count)
