@@ -10,6 +10,9 @@ client = OpenAI(
     api_key="7f5744e3-acfc-43de-a35c-3bd3cf92f5e4",
 )
 
+# 需要传给大模型的图片
+image_path = "../assets/down.png"
+
 
 # 定义方法将指定路径图片转为Base64编码
 def encode_image(img_path):
@@ -17,11 +20,8 @@ def encode_image(img_path):
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 
-# 需要传给大模型的图片
-image_path = "../assets/down.png"
-
 # 将图片转为Base64编码
-base64_image = encode_image(image_path)
+base64_image = f"data:image/png;base64,{encode_image(image_path)}"
 
 response = client.chat.completions.create(
     # 指定您创建的方舟推理接入点 ID，此处已帮您修改为您的推理接入点 ID
@@ -34,7 +34,7 @@ response = client.chat.completions.create(
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": f"data:image/png;base64,{base64_image}"
+                        "url": base64_image
                     },
                 },
             ],

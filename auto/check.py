@@ -1,7 +1,9 @@
+import base64
 import datetime
 import json
 import imaplib
 import email
+import os
 import re
 import time
 from email.header import decode_header
@@ -12,6 +14,7 @@ from email.mime.multipart import MIMEMultipart
 from email.utils import format_datetime
 from email.header import Header
 from openai import OpenAI
+import requests
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
@@ -25,6 +28,8 @@ class MailCheck:
         self.link_count = 0
         self.code_count = 0
         self.aiclient = None
+        self.current_email_id = 0
+        self.init_env()
         self.init_mail()
 
     def init_mail(self):
@@ -43,12 +48,27 @@ class MailCheck:
             self.server.login(config.get("EMAIL_ACCOUNT"), config.get("EMAIL_PASSWORD"))
             self.config = config
         print("mail initialized")
+        # 移除代理
+        proxies = {}
         self.aiclient = OpenAI(
             # 此为默认路径，您可根据业务所在地域进行配置
             base_url="https://ark.cn-beijing.volces.com/api/v3",
             # 从环境变量中获取您的 API Key。此为默认方式，您可根据需要进行修改
             api_key=config.get("AI_TOKEN", None),
         )
+
+    def init_env(self):
+        print("initializing env")
+        # 检查是否存在imgs目录，不存在就创建
+        if not os.path.exists("imgs"):
+            os.makedirs("imgs")
+
+    # 保存图片到imgs目录
+    def save_img(self, filename, img):
+        image_data = base64.b64decode(img)
+        with open(f"imgs/{filename}.png", "wb") as f:
+            f.write(image_data)
+        print(f"{filename}.png存储完成")
 
     def send_email(self, email_id, to_email_str, subject, new_body, in_reply_to, is_text, new_references):
         print("sending mail to", to_email_str)
@@ -89,6 +109,8 @@ class MailCheck:
 
     def get_code(self, img):
         print("用豆包api识别图片中的文字")
+        # 拼接data:image/png;base64,
+        base64_img = "data:image/png;base64," + img
         response = self.aiclient.chat.completions.create(
             # 指定您创建的方舟推理接入点 ID，此处已帮您修改为您的推理接入点 ID
             model="doubao-1-5-vision-pro-32k-250115",
@@ -96,42 +118,73 @@ class MailCheck:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "请返回这个图片中彩色的单词给我，不要返回其他的内容"},
+                        {"type": "text",
+                         "text": "请返回这个图片中彩色的单词给我，不要返回其他的内容，如果有两个单词，用空格分开，如果没有，返回空字符串"},
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": img
+                                "url": base64_img
                             },
                         },
                     ],
                 }
             ],
         )
-        print(response.choices[0])
-        print("content: ", response.choices[0].message.content)
+        code = response.choices[0].message.content
+        print(f"{self.current_email_id}图片验证码内容是: {code}")
+        # 带有空格说明识别到两个单词，如果是空字符串，说明没有识别到单词
+        if " " in code:
+            return "retry"
+        elif code == "":
+            return "retry"
+        else:
+            return code
 
     def get_code_img(self, link):
-        print("用豆包api识别图片中的文字")
+        print("playwright网页中提取验证码图片...")
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
-            page.goto(link, wait_until="networkidle")  # 等待页面加载完成
+            # 等待页面加载完成
+            page.goto(link, wait_until="networkidle")
             text = page.content()  # 获取整个 HTML
-            print("code html:", text)
+            # print("code html:", text)
             browser.close()
             pattern = r'<img[^>]*src="(data:image/[^;]+;base64,[^"]+)"[^>]*>'
             # 使用 re.search() 函数在文本中查找第一个匹配的链接地址
             match = re.search(pattern, text)
             if match:
                 img = match.group(1)
-                print("img:", img)
-                self.get_code(img)
+                print("base64 img:", img)
+                # 去掉base64的前缀
+                img = img.split(",")[1]
+                print("img data:", img)
+                code = self.get_code(img)
+                if code == "retry":
+                    print("验证码识别失败，重试")
+                    return False
+                else:
+                    print("验证码识别成功，回复邮件")
+                    self.save_img(f"{self.current_email_id}_{code}", img)
+                    return True
+            else:
+                print("未找到匹配的链接地址")
+                return False
 
     def reply_code(self, code):
         print("回复识别到的文字内容")
 
     def click_reply(self, link):
-        print("点击回复邮件链接")
+        print("点击回复邮件链接", link)
+        headers = {
+            'sec-ch-ua-platform': '"macOS"',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+            'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
+            'Content-Type': 'application/json',
+            'sec-ch-ua-mobile': '?0'
+        }
+        response = requests.request("GET", link, headers=headers)
+        print("click reply response:", response)
 
     def get_click_link(self, html):
         # 定义正则表达式模式，用于匹配以 http 开头的链接地址
@@ -149,7 +202,7 @@ class MailCheck:
         # 使用BeautifulSoup解析HTML
         soup = BeautifulSoup(html, 'html.parser')
         # 查找包含“Deliver my email”文本的<a>标签
-        a_tag = soup.find('a', string=lambda x: x and 'Deliver my email' in x.strip())
+        a_tag = soup.find('a', class_='button_link')
         # 提取链接地址
         if a_tag:
             link = a_tag.get('href')
@@ -162,17 +215,28 @@ class MailCheck:
     def check_reply(self, html_body):
         # print("检查并处理回复邮件", html_body)
         # 判断邮件类型
-        if "Deliver" in html_body:
+        if "button_link" in html_body:
             self.code_count += 1
             print("处理Deliver邮件", self.code_count)
             # 提取链接
             link = self.get_deliver_link(html_body)
             # 获取验证码
-            self.get_code_img(link)
+            if link:
+                for i in range(3):
+                    print(f"尝试第{i + 1}次获取验证码")
+                    result = self.get_code_img(link)
+                    if result:
+                        break
+                    else:
+                        time.sleep(5)
+            else:
+                print("没有提取到按钮链接")
         else:
             self.link_count += 1
             print("处理链接", self.link_count)
             link = self.get_click_link(html_body)
+            if link:
+                self.click_reply(link)
 
     def rewrite_email(self, delivery_time, from_email, text_body, html_body: str):
         # print(f"Rewriting email body: {text_body}")
@@ -248,6 +312,7 @@ class MailCheck:
         print(f"发现 {len(email_ids)} 封标记邮件")
         for (key, email_id) in enumerate(email_ids):
             # 获取邮件数据
+            self.current_email_id = key
             print(f"正在处理邮件 {key} : {email_id}...")
             status, msg_data = self.mail.fetch(email_id, "(RFC822)")
             for response_part in msg_data:
@@ -305,7 +370,10 @@ class MailCheck:
                         html_body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
                         # print(f"邮件正文: {html_body}")
                     # 检查邮件
-                    self.check_reply(html_body)
+                    try:
+                        self.check_reply(html_body)
+                    except Exception as e:
+                        print(f"Error: {e}")
                     print(f"等待延时：{self.config.get('SLEEP_TIME', 60)} 秒...")
                     time.sleep(self.config.get("SLEEP_TIME", 60))
         # 退出

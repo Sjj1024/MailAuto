@@ -2,7 +2,7 @@
 import re
 from openai import OpenAI
 
-with open("imgcode.html", "r", encoding="utf-8") as f:
+with open("testcode.html", "r", encoding="utf-8") as f:
     text = f.read()
     pattern = r'<img[^>]*src="(data:image/[^;]+;base64,[^"]+)"[^>]*>'
     # 使用 re.search() 函数在文本中查找第一个匹配的链接地址
@@ -15,7 +15,7 @@ aiclient = OpenAI(
     # 此为默认路径，您可根据业务所在地域进行配置
     base_url="https://ark.cn-beijing.volces.com/api/v3",
     # 从环境变量中获取您的 API Key。此为默认方式，您可根据需要进行修改
-    api_key=config.get("AI_TOKEN", None),
+    api_key="7f5744e3-acfc-43de-a35c-3bd3cf92f5e4",
 )
 
 response = aiclient.chat.completions.create(
