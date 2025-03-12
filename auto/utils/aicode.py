@@ -7,7 +7,7 @@ client = OpenAI(
     # 此为默认路径，您可根据业务所在地域进行配置
     base_url="https://ark.cn-beijing.volces.com/api/v3",
     # 从环境变量中获取您的 API Key。此为默认方式，您可根据需要进行修改
-    api_key="7f5744e3-acfc-43de-a35c-3bd3cf92f5e4",
+    api_key="",
 )
 
 # 需要传给大模型的图片
