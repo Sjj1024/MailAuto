@@ -174,21 +174,45 @@ class MailCheck:
     def reply_code(self, code):
         print("回复识别到的文字内容")
 
-    def click_reply(self, link):
-        print("点击回复邮件链接", link)
+    def request_click_reply(self, url):
+        print("请求点击回复邮件链接", url)
+        # url = "http://mail.motortrade.com.ph/cgi-sys/bxd.cgi?a=mnc1291@motortrade.com.ph&id=K05hsW1QSrhwMZFDvNYSj-1741710135"
+        payload = {}
         headers = {
             'sec-ch-ua-platform': '"macOS"',
+            'Referer': 'https://juejin.cn/',
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
             'sec-ch-ua': '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
             'Content-Type': 'application/json',
             'sec-ch-ua-mobile': '?0'
         }
-        response = requests.request("GET", link, headers=headers)
-        print("click reply response:", response)
+        response = requests.request("GET", url, headers=headers, data=payload)
+        text = response.text
+        print("click reply content", text)
+        if "Successful" in text:
+            print("处理链接邮件成功")
+        else:
+            print("处理链接邮件失败")
+
+    def click_reply(self, link):
+        print("点击回复邮件链接", link)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            # 等待页面加载完成
+            page.goto(link, wait_until="networkidle")
+            text = page.content()  # 获取整个 HTML
+            # print("code html:", text)
+            browser.close()
+            print("click reply content", text)
+            if "Successful" in text:
+                print("处理链接邮件成功")
+            else:
+                print("处理链接邮件失败")
 
     def get_click_link(self, html):
         # 定义正则表达式模式，用于匹配以 http 开头的链接地址
-        pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+        pattern = r"https?://[^\s<>\"']+"
         # 使用 re.search() 函数在文本中查找第一个匹配的链接地址
         match = re.search(pattern, html)
         # 如果找到匹配的链接地址，则返回该地址；否则返回 None
@@ -236,7 +260,7 @@ class MailCheck:
             print("处理链接", self.link_count)
             link = self.get_click_link(html_body)
             if link:
-                self.click_reply(link)
+                self.request_click_reply(link)
 
     def rewrite_email(self, delivery_time, from_email, text_body, html_body: str):
         # print(f"Rewriting email body: {text_body}")
