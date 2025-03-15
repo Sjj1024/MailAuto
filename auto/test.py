@@ -1,7 +1,7 @@
 import requests
 
 # url = "http://www.jimbabbage.ca/cgi-sys/bxd.cgi?a=jim@jimbabbage.ca&id=ejpu5dcPaBojJm4lYrjjI-1741281817"
-url = "http://www.boydcomm.com/cgi-sys/bxd.cgi?a=doug@boydcomm.com&id=5FTHVuTRHKmwjpXYKQSPM-1741281802"
+url = "http://www.digitalmoneytalk.com/cgi-sys/bxd.cgi?a=admin@digitalmoneytalk.com&id=bEfopuLViKymnTtpgX3WT-1741959710"
 
 payload = {}
 headers = {
